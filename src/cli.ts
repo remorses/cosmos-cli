@@ -83,17 +83,20 @@ async function downloadAndPrint({
   elements,
   outDir,
   kinds,
+  concurrency,
   console,
 }: {
   elements: CosmosElement[]
   outDir: string
   kinds?: MediaKind[]
+  concurrency: number
   console: GokeConsole
 }) {
   const results = await downloadElements({
     elements,
     outDir: path.resolve(outDir),
     kinds,
+    concurrency,
     onResult: (result) => {
       if (result instanceof Error) console.error(colors.red(result.message))
       else console.error(`${colors.green('saved')} ${result.path} ${colors.dim(`${Math.round(result.bytes / 1024)} KB`)}`)
@@ -110,6 +113,7 @@ const kindOption = [
   '--kind [kind]',
   z.array(z.enum(MEDIA_KINDS)).optional().describe('With `--download`, only save these media kinds. Repeatable'),
 ] as const
+const concurrencyOption = ['--concurrency [n]', z.int().min(1).max(32).default(4).describe('Files downloaded in parallel')] as const
 
 cli
   .command(
@@ -146,9 +150,10 @@ cli
   .option('--cursor [cursor]', z.string().optional().describe('Continue from the cursor printed by a previous run'))
   .option(...downloadOption)
   .option(...kindOption)
+  .option(...concurrencyOption)
   .option('--json', 'Print results as JSON')
   .example('cosmos search "paper texture"')
-  .example('cosmos search "film grain overlay" --type image --limit 100 --download ./assets')
+  .example('cosmos search "film grain overlay" --type image --limit 100 --download ./assets/film-grain-overlay')
   .example("cosmos search 'brutalist poster' --color '#ff0000' --order popular --json")
   .action(async (query, options, { console }) => {
     const page = await withClient({
@@ -168,7 +173,7 @@ cli
     if (page instanceof Error) exitWithError({ console, error: page })
     if (options.json) console.log(JSON.stringify({ query, ...page }, null, 2))
     else printPage({ page, header: `${page.total ?? '?'} results for "${query}" · showing ${page.elements.length}`, console })
-    if (options.download) await downloadAndPrint({ elements: page.elements, outDir: options.download, kinds: options.kind, console })
+    if (options.download) await downloadAndPrint({ elements: page.elements, outDir: options.download, kinds: options.kind, concurrency: options.concurrency, console })
   })
 
 cli
@@ -183,9 +188,10 @@ cli
   )
   .option(...downloadOption)
   .option(...kindOption)
+  .option(...concurrencyOption)
   .option('--json', 'Print the element as JSON')
   .example('cosmos element 764119920')
-  .example('cosmos element https://www.cosmos.so/e/764119920 --download ./assets')
+  .example('cosmos element https://www.cosmos.so/e/764119920 --download ./assets/paper-texture')
   .action(async (element, options, { console }) => {
     const details = await withClient({ anonymous: options.anonymous, task: (client) => getElement({ client, element }) })
     if (details instanceof Error) exitWithError({ console, error: details })
@@ -194,7 +200,7 @@ cli
       console.log(formatElement({ element: details }))
       console.log(colors.dim(`created ${details.createdAt} · saved ${details.saves ?? '?'} times`))
     }
-    if (options.download) await downloadAndPrint({ elements: [details], outDir: options.download, kinds: options.kind, console })
+    if (options.download) await downloadAndPrint({ elements: [details], outDir: options.download, kinds: options.kind, concurrency: options.concurrency, console })
   })
 
 cli
@@ -208,6 +214,7 @@ cli
   .option('--cursor [cursor]', z.string().optional().describe('Continue from the cursor printed by a previous run'))
   .option(...downloadOption)
   .option(...kindOption)
+  .option(...concurrencyOption)
   .option('--json', 'Print results as JSON')
   .example('cosmos similar 764119920 --limit 20')
   .action(async (element, options, { console }) => {
@@ -218,7 +225,7 @@ cli
     if (page instanceof Error) exitWithError({ console, error: page })
     if (options.json) console.log(JSON.stringify(page, null, 2))
     else printPage({ page, header: `similar to ${element} · showing ${page.elements.length}`, console })
-    if (options.download) await downloadAndPrint({ elements: page.elements, outDir: options.download, kinds: options.kind, console })
+    if (options.download) await downloadAndPrint({ elements: page.elements, outDir: options.download, kinds: options.kind, concurrency: options.concurrency, console })
   })
 
 function formatCollection(c: CosmosCollection, index: number): string {
@@ -267,9 +274,10 @@ cli
   .option('--cursor [cursor]', z.string().optional().describe('Continue from the cursor printed by a previous run'))
   .option(...downloadOption)
   .option(...kindOption)
+  .option(...concurrencyOption)
   .option('--json', 'Print the collection and its elements as JSON')
   .example('cosmos collection https://www.cosmos.so/maratorresg/paper-texture --limit 100')
-  .example('cosmos collection maratorresg/paper-texture --limit 1000 --download ./paper')
+  .example('cosmos collection maratorresg/paper-texture --limit 1000 --download ./assets/paper-texture --concurrency 8')
   .action(async (collection, options, { console }) => {
     const result = await withClient({
       anonymous: options.anonymous,
@@ -285,7 +293,7 @@ cli
         console,
       })
     }
-    if (options.download) await downloadAndPrint({ elements: result.elements, outDir: options.download, kinds: options.kind, console })
+    if (options.download) await downloadAndPrint({ elements: result.elements, outDir: options.download, kinds: options.kind, concurrency: options.concurrency, console })
   })
 
 cli
@@ -299,13 +307,14 @@ cli
   )
   .option('--out [dir]', z.string().default('.').describe('Folder to save files into'))
   .option('--kind [kind]', z.array(z.enum(MEDIA_KINDS)).optional().describe('Only save these media kinds. Repeatable'))
+  .option(...concurrencyOption)
   .option('--json', 'Print the saved files as JSON')
-  .example('cosmos download 764119920 1924202323 --out ./assets')
-  .example('cosmos search "paper texture" --json | jq -r ".elements[].id" | xargs cosmos download --out ./assets')
+  .example('cosmos download 764119920 1924202323 --out ./assets/paper-texture')
+  .example('cosmos search "paper texture" --json | jq -r ".elements[].id" | xargs cosmos download --out ./assets/paper-texture')
   .action(async (elements, options, { console }) => {
     const [ids, invalid] = errore.partition(elements.map(parseElementId))
     if (invalid[0]) exitWithError({ console, error: invalid[0] })
-    if (ids.length === 0) exitWithError({ console, error: new Error('Pass at least one element id, e.g. cosmos download 764119920 --out ./assets') })
+    if (ids.length === 0) exitWithError({ console, error: new Error('Pass at least one element id, e.g. cosmos download 764119920 --out ./assets/paper-texture') })
     const details = await withClient({
       anonymous: options.anonymous,
       task: (client) => Promise.all(ids.map((id) => getElement({ client, element: id }))),
@@ -314,7 +323,7 @@ cli
     const [found, missing] = errore.partition(details)
     for (const error of missing) console.error(colors.red(error.message))
     const outDir = path.resolve(options.out)
-    const results = await downloadElements({ elements: found, outDir, kinds: options.kind })
+    const results = await downloadElements({ elements: found, outDir, kinds: options.kind, concurrency: options.concurrency })
     const [saved, failed] = errore.partition(results)
     for (const error of failed) console.error(colors.red(error.message))
     if (options.json) console.log(JSON.stringify(saved, null, 2))

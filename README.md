@@ -10,9 +10,9 @@
 `cosmos` searches [cosmos.so](https://www.cosmos.so) like the site's search page and returns every element as data: **original media URLs**, sizes, AI caption, source URL and author, gif and video variants, product and website info. It can download the original files. It calls the site's GraphQL API from Node with your login token, copied once from Chrome through [playwriter](https://playwriter.dev). No clicks, no scraping.
 
 ```bash
-cosmos search "paper texture" --type image --limit 100 --download ./assets
+cosmos search "paper texture" --type image --limit 100 --download ./assets/paper-texture
 cosmos element https://www.cosmos.so/e/764119920
-cosmos collection maratorresg/paper-texture --limit 1000 --download ./paper
+cosmos collection maratorresg/paper-texture --limit 1000 --download ./assets/paper-texture
 ```
 
 ## Features
@@ -56,7 +56,7 @@ If playwriter is connected in more than one browser profile, pick one with `COSM
 cosmos search "light paper texture"
 cosmos search "film grain overlay" --type image --order popular --limit 200
 cosmos search "brutalist poster" --color '#ff0000' --color '#0000ff'
-cosmos search "ocean waves" --type video --download ./clips
+cosmos search "ocean waves" --type video --download ./assets/ocean-waves
 cosmos search "moodboard" --mine          # only elements you saved
 ```
 
@@ -83,6 +83,7 @@ more results: --cursor 'cursor://recsys/search?...'
 | `--cursor` | continue from the cursor of a previous run |
 | `--download <dir>` | save the original files |
 | `--kind` | with `--download`, only `image`, `gif` or `video` (repeatable) |
+| `--concurrency` | with `--download`, files fetched in parallel (default 4) |
 
 ## Elements, similar, collections
 
@@ -98,9 +99,11 @@ cosmos collection https://www.cosmos.so/maratorresg/paper-texture --limit 1000
 `--download <dir>` works on `search`, `element`, `similar` and `collection`. The `download` command takes element ids or URLs and reads every media of each element first:
 
 ```bash
-cosmos download 764119920 457818511 --out ./assets
-cosmos search "paper texture" --json | jq -r '.elements[].id' | xargs cosmos download --out ./assets
+cosmos download 764119920 457818511 --out ./assets/paper-texture
+cosmos search "paper texture" --json | jq -r '.elements[].id' | xargs cosmos download --out ./assets/paper-texture --concurrency 8
 ```
+
+Save each search into its **own folder** named after the query (`./assets/paper-texture`, `./assets/ocean-waves`), not one shared `./assets` folder. Every file is the original from the CDN, never a resized copy. `--concurrency` sets how many files download in parallel (default 4).
 
 Files are named `<caption-slug>-<id>.<ext>`. Multi image elements get `-1`, `-2` suffixes. The extension comes from the CDN content type (`jpg`, `png`, `webp`, `gif`, `mp4`).
 
@@ -122,7 +125,7 @@ for (const element of page.elements) {
 }
 
 const preview = resizedImageUrl({ url: page.elements[0]!.media[0]!.url, width: 400 })
-const files = await downloadElements({ elements: page.elements, outDir: './assets', kinds: ['image'] })
+const files = await downloadElements({ elements: page.elements, outDir: './assets/paper-texture', kinds: ['image'], concurrency: 8 })
 ```
 
 | Function | Returns |
@@ -161,7 +164,7 @@ cosmos completions install
 ## Agent notes
 
 - **Read `cosmos --help` in full** before using the CLI. It lists every option.
-- **Asset workflow**: search with `--json`, pick elements by `caption`, `media[].width/height` and `media[].kind`, then `cosmos download <ids> --out <dir>`. Use `cosmos element <id>` for carousels: search results can hold fewer media than the element page.
+- **Asset workflow**: search with `--json`, pick elements by `caption`, `media[].width/height` and `media[].kind`, then `cosmos download <ids> --out ./assets/<query-slug>`. Always one folder per query, named with the kebab-case query. Use `cosmos element <id>` for carousels: search results can hold fewer media than the element page.
 - **Big images**: sort by size with jq, e.g. `jq '[.elements[] | select(.media[0].width >= 1500)]'`.
 - **Previews**: the CDN resizes on the fly: `https://cdn.cosmos.so/<id>?format=webp&w=400`. Only for images and gifs, not mp4.
 - **`--type video` can return gifs** (`media[].kind: "gif"`). That is cosmos behavior. Filter downloads with `--kind video`.
